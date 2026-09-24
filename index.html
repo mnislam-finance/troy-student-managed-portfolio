@@ -6,6 +6,7 @@
   <title>Troy Student Managed Portfolio Management System</title>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{--troy:#8b1e3f;--navy:#172033;--gold:#d4af37;--bg:#f5f7fb;--card:#fff;--muted:#6b7280;--border:#e5e7eb;--green:#0f8a5f;--red:#b42318;--amber:#b7791f;--blue:#2563eb}
     *{box-sizing:border-box} body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:var(--bg);color:#111827}
@@ -13,11 +14,23 @@
     .topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;max-width:1500px;margin:auto}.brand{display:flex;align-items:center;gap:14px}.logo{width:48px;height:48px;border-radius:10px;background:var(--troy);display:grid;place-items:center;font-weight:800;border:2px solid var(--gold)}
     .brand h1{font-size:20px;margin:0}.brand small{opacity:.8}.role-box{display:flex;align-items:center;gap:8px} select,input,textarea,button{font:inherit} select,input,textarea{border:1px solid var(--border);border-radius:8px;padding:9px 10px;background:#fff} button{border:0;border-radius:8px;padding:10px 14px;cursor:pointer;font-weight:600}.btn-primary{background:var(--troy);color:#fff}.btn-secondary{background:#eef2f7;color:#1f2937}.btn-success{background:var(--green);color:#fff}.btn-danger{background:var(--red);color:#fff}.btn-warning{background:#f3b33d;color:#2f2500}
     .layout{max-width:1500px;margin:0 auto;display:grid;grid-template-columns:250px 1fr;min-height:calc(100vh - 84px)} aside{background:#fff;border-right:1px solid var(--border);padding:18px 12px} nav button{display:block;width:100%;text-align:left;background:transparent;color:#374151;margin:4px 0} nav button.active,nav button:hover{background:#f3f4f6;color:var(--troy)} main{padding:24px}.page{display:none}.page.active{display:block}.page-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px;flex-wrap:wrap}.page-head h2{margin:0 0 4px}.subtle{color:var(--muted);font-size:14px}.small{font-size:12px}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.04)}.kpi-label{color:var(--muted);font-size:13px}.kpi-value{font-size:27px;font-weight:800;margin-top:5px}.kpi-sub{font-size:12px;color:var(--muted);margin-top:4px}.workflow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:18px}.step{background:#fff;border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-size:13px}.arrow{color:#9ca3af}.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1} label{font-size:13px;font-weight:700;color:#374151} textarea{min-height:96px;resize:vertical} table{width:100%;border-collapse:collapse;font-size:14px} th,td{padding:10px;border-bottom:1px solid var(--border);vertical-align:top;text-align:left;white-space:nowrap} th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;background:#fafafa;position:sticky;top:0}.table-wrap{overflow:auto;background:#fff;border:1px solid var(--border);border-radius:12px;max-height:560px}.badge{display:inline-block;border-radius:999px;padding:4px 8px;font-size:12px;font-weight:700}.b-submitted{background:#e8f0ff;color:#2457c5}.b-review{background:#fff4db;color:#7a5600}.b-approved{background:#e8f7ef;color:#0d6c47}.b-rejected{background:#fdecec;color:#9a1c1c}.b-executed{background:#e8eef5;color:#243b53}.ticket{border-left:4px solid var(--troy)}.timeline{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:12px}.timeline div{padding:8px;border-radius:8px;text-align:center;font-size:12px;background:#f3f4f6}.timeline .done{background:#e8f7ef;color:#0d6c47;font-weight:700}.timeline .current{background:#fff4db;color:#7a5600;font-weight:700}.hint{background:#fffaf0;border:1px solid #f3dfb2;border-radius:10px;padding:12px;color:#634b14;font-size:13px}.danger-note{background:#fff1f0;border:1px solid #f3c7c4;padding:12px;border-radius:10px;color:#8a1c13}.good{color:var(--green);font-weight:700}.bad{color:var(--red);font-weight:700}.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.chart-card{height:390px}.section-title{margin:0 0 12px;font-size:18px}.market-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.market-card input{width:100%;margin-top:8px}.footer-note{margin-top:16px;color:var(--muted);font-size:12px}
+    .auth-overlay{position:fixed;inset:0;background:linear-gradient(135deg,#172033,#25324b);z-index:9999;display:grid;place-items:center;padding:20px}.auth-card{width:min(440px,100%);background:#fff;border-radius:16px;padding:28px;box-shadow:0 24px 70px rgba(0,0,0,.28)}.auth-card h2{margin:0 0 6px}.auth-card .field{margin-top:14px}.auth-actions{display:flex;gap:10px;align-items:center;margin-top:18px}.auth-error{color:var(--red);font-size:13px;margin-top:12px;min-height:18px}.user-chip{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.1);padding:7px 10px;border-radius:10px}.user-chip .meta{line-height:1.2}.user-chip strong{display:block;font-size:13px}.user-chip span{font-size:11px;opacity:.8}.hidden{display:none!important}
     @media(max-width:1100px){.layout{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--border)}nav{display:flex;gap:6px;overflow:auto}.cards,.market-grid{grid-template-columns:repeat(2,1fr)}} @media(max-width:700px){main{padding:14px}.cards,.grid-2,.grid-3,.form-grid,.market-grid{grid-template-columns:1fr}.timeline{grid-template-columns:1fr 1fr}.topbar{align-items:flex-start;flex-direction:column}.layout{min-height:auto}}
   </style>
 </head>
 <body>
-<header><div class="topbar"><div class="brand"><div class="logo">TROY</div><div><h1>Troy Student Managed Portfolio</h1><small>Portfolio, Trade & Performance Management System</small></div></div><div class="role-box"><span class="small">Demo role:</span><select id="roleSelect"><option>Sector Lead</option><option>Head Trader</option><option>Compliance Officer</option><option>Portfolio Director</option><option>Instructor</option></select></div></div></header>
+<div id="authOverlay" class="auth-overlay">
+  <div class="auth-card">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px"><div class="logo">TROY</div><div><h2>Troy Student Managed Portfolio</h2><div class="subtle">Sign in with your authorized account</div></div></div>
+    <form id="loginForm">
+      <div class="field"><label>Email</label><input id="loginEmail" type="email" autocomplete="username" required placeholder="name@troy.edu"></div>
+      <div class="field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" required></div>
+      <div class="auth-actions"><button class="btn-primary" type="submit">Sign in</button><span class="subtle small">Access is controlled by your assigned role.</span></div>
+      <div id="authError" class="auth-error"></div>
+    </form>
+  </div>
+</div>
+<header><div class="topbar"><div class="brand"><div class="logo">TROY</div><div><h1>Troy Student Managed Portfolio</h1><small>Portfolio, Trade & Performance Management System</small></div></div><div class="role-box"><div class="user-chip"><div class="meta"><strong id="userName">Not signed in</strong><span id="userRole">—</span></div></div><button class="btn-secondary" id="logoutBtn" type="button">Sign out</button><select id="roleSelect" class="hidden"><option>Student</option><option>Sector Lead</option><option>Equity Analyst</option><option>Head Trader</option><option>Compliance Officer</option><option>Portfolio Director</option><option>Instructor</option></select></div></div></header>
 <div class="layout">
   <aside><nav id="nav">
     <button class="active" data-page="dashboard">Dashboard</button>
@@ -54,7 +67,7 @@
 
     <section id="submit" class="page">
       <div class="page-head"><div><h2>Submit Trade Recommendation</h2><div class="subtle">Sector Leads review the portfolio plan and current holdings, then submit the recommendation.</div></div></div>
-      <div class="card"><form id="tradeForm" class="form-grid"><div class="field"><label>Sector</label><select id="sector" required></select></div><div class="field"><label>Ticker</label><select id="ticker" required></select></div><div class="field"><label>Company</label><input id="company" readonly></div><div class="field"><label>Target weight from plan</label><input id="planWeight" readonly></div><div class="field"><label>Recommended action</label><select id="action"><option>Buy</option><option>Increase</option><option>Reduce</option><option>Sell</option></select></div><div class="field"><label>Recommended new weight (%)</label><input id="newWeight" type="number" step="0.01" min="0" required></div><div class="field"><label>Proposed dollar amount</label><input id="amount" type="number" min="0" step="100"></div><div class="field"><label>Current price (optional)</label><input id="price" type="number" min="0" step="0.01"></div><div class="field full"><label>Investment rationale</label><textarea id="rationale" required></textarea></div><div class="field full"><label>Key risks / concerns</label><textarea id="risks"></textarea></div><div class="field"><label>Sector Lead name</label><input id="leadName" required></div><div class="field"><label>Reference portfolio version</label><input id="planVersion" placeholder="e.g., Portfolio Plan - Sep 24, 2026"></div><div class="field full"><button class="btn-primary" type="submit">Submit Trade Recommendation</button></div></form></div>
+      <div class="card"><div id="submitIdentity" class="subtle" style="margin-bottom:14px;font-weight:600"></div><form id="tradeForm" class="form-grid"><div class="field"><label>Sector</label><select id="sector" required></select></div><div class="field"><label>Ticker</label><select id="ticker" required></select></div><div class="field"><label>Company</label><input id="company" readonly></div><div class="field"><label>Target weight from plan</label><input id="planWeight" readonly></div><div class="field"><label>Recommended action</label><select id="action"><option>Buy</option><option>Increase</option><option>Reduce</option><option>Sell</option></select></div><div class="field"><label>Recommended new weight (%)</label><input id="newWeight" type="number" step="0.01" min="0" required></div><div class="field"><label>Proposed dollar amount</label><input id="amount" type="number" min="0" step="100"></div><div class="field"><label>Current price (optional)</label><input id="price" type="number" min="0" step="0.01"></div><div class="field full"><label>Investment rationale</label><textarea id="rationale" required></textarea></div><div class="field full"><label>Key risks / concerns</label><textarea id="risks"></textarea></div><div class="field"><label>Sector Lead name</label><input id="leadName" required></div><div class="field"><label>Reference portfolio version</label><input id="planVersion" placeholder="e.g., Portfolio Plan - Sep 24, 2026"></div><div class="field full"><button class="btn-primary" type="submit">Submit Trade Recommendation</button></div></form></div>
     </section>
 
     <section id="queue" class="page"><div class="page-head"><div><h2>Approval Queue</h2><div class="subtle">Actions depend on the selected role. Head Trader does not approve investment decisions.</div></div></div><div id="queueList"></div></section>
@@ -89,7 +102,40 @@ document.getElementById("excelFile").addEventListener("change",async e=>{const f
 document.getElementById("holdingsFile").addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;const rows=await readRows(file);const planMap=Object.fromEntries(state.plan.map(p=>[p.ticker,p]));const holdings=rows.map(r=>{const ticker=String(pick(r,["Symbol","Ticker","Stock","Stock Ticker"])||"").trim().toUpperCase();const shares=num(pick(r,["Shares","Quantity","Qty"]));const lastPrice=num(pick(r,["Last Price","Price","Current Price","Market Price"]));const avgCost=num(pick(r,["Average Cost per Share","Avg Cost/Share","Average Cost","Cost Basis Per Share","Avg Price"]));const totalCost=num(pick(r,["Total Cost","Cost Basis","Cost"] )) || shares*avgCost;const marketValue=num(pick(r,["Market Value","Value","Current Value"])) || shares*lastPrice;const dayGainPct=num(pick(r,["Day Gain %","Daily Gain %","Day %"]));const dayGain=num(pick(r,["Day Gain $","Daily Gain $","Day Gain","Daily Gain"]));const totalGain=num(pick(r,["Total Gain $","Gain/Loss $","Total Gain","Unrealized Gain/Loss"] )) || marketValue-totalCost;const totalGainPct=num(pick(r,["Total Gain %","Gain/Loss %","Total Return %"] )) || (totalCost?totalGain/totalCost*100:0);const sector=pick(r,["Sector","GICS Sector","S&P Sector"])||planMap[ticker]?.sector||"Unclassified";return{ticker,shares,lastPrice,avgCost,totalCost,marketValue,dayGainPct,dayGain,totalGainPct,totalGain,sector,targetWeight:planMap[ticker]?.targetWeight??""}}).filter(x=>x.ticker&&x.shares!==0);if(!holdings.length){alert("No holdings rows detected. Include at least Symbol/Ticker and Shares/Quantity.");return}state.holdings=holdings;renderAll();alert(`Imported ${holdings.length} holdings.`)});
 document.getElementById("benchmarkFile").addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;const rows=await readRows(file);const parsed=rows.map(r=>{const out={date:pick(r,["Date","Trading Date"])};Object.values(ETF_MAP).forEach(sym=>{out[sym]=num(pick(r,[sym,`${sym} Return`,`Return ${sym}`]))});return out}).filter(x=>x.date);if(!parsed.length){alert("No benchmark rows with a Date column were detected.");return}state.benchmarks=parsed;renderPerformance();alert(`Imported ${parsed.length} benchmark rows.`)});
 function renderPlan(){document.getElementById("planBody").innerHTML=state.plan.map(p=>`<tr><td>${esc(p.sector)}</td><td>${esc(p.ticker)}</td><td>${esc(p.company||"")}</td><td>${p.targetWeight!==""?Number(p.targetWeight).toFixed(2)+"%":""}</td></tr>`).join("")}
-function renderSubmitSelectors(){const sectors=[...new Set(state.plan.map(p=>p.sector))].sort();const s=document.getElementById("sector"),prev=s.value;s.innerHTML=sectors.map(x=>`<option>${esc(x)}</option>`).join("");if(sectors.includes(prev))s.value=prev;updateTickers()}
+function renderSubmitSelectors(){
+  const sectors=[...new Set(state.plan.map(p=>p.sector))].sort();
+  const s=document.getElementById("sector"),prev=s.value;
+  s.innerHTML=sectors.map(x=>`<option>${esc(x)}</option>`).join("");
+  const assignedSector=(authProfile?.sector||"").trim();
+  const role=currentRole();
+  if(role==="Sector Lead" && assignedSector){
+    if(!sectors.includes(assignedSector)){
+      const opt=document.createElement("option"); opt.value=assignedSector; opt.textContent=assignedSector; s.appendChild(opt);
+    }
+    s.value=assignedSector;
+    s.disabled=true;
+  }else if(role==="Equity Analyst" && assignedSector){
+    if(!sectors.includes(assignedSector)){
+      const opt=document.createElement("option"); opt.value=assignedSector; opt.textContent=assignedSector; s.appendChild(opt);
+    }
+    s.value=assignedSector;
+    s.disabled=true;
+  }else{
+    s.disabled=false;
+    if(sectors.includes(prev))s.value=prev;
+  }
+  const lead=document.getElementById("leadName");
+  if(lead){
+    lead.value=authProfile?.full_name||"";
+    lead.readOnly=true;
+  }
+  const identity=document.getElementById("submitIdentity");
+  if(identity){
+    const sectorText=assignedSector?` · Assigned sector: ${esc(assignedSector)}`:"";
+    identity.innerHTML=authProfile?`Submitting as <strong>${esc(authProfile.full_name||authUser?.email||"")}</strong> · ${esc(role)}${sectorText}`:"";
+  }
+  updateTickers();
+}
 function updateTickers(){const sector=document.getElementById("sector").value;const rows=state.plan.filter(p=>p.sector===sector);const t=document.getElementById("ticker"),prev=t.value;t.innerHTML=rows.map(p=>`<option value="${esc(p.ticker)}">${esc(p.ticker)}${p.company?" — "+esc(p.company):""}</option>`).join("");if(rows.some(r=>r.ticker===prev))t.value=prev;updateStockFields()}
 function updateStockFields(){const p=state.plan.find(x=>x.sector===document.getElementById("sector").value&&x.ticker===document.getElementById("ticker").value);document.getElementById("company").value=p?.company||"";document.getElementById("planWeight").value=p?.targetWeight!==""&&p?`${Number(p.targetWeight).toFixed(2)}%`:""} document.getElementById("sector").onchange=updateTickers;document.getElementById("ticker").onchange=updateStockFields;
 document.getElementById("tradeForm").onsubmit=e=>{e.preventDefault();const trades=state.trades;const n=trades.reduce((m,t)=>Math.max(m,parseInt(t.id.split("-").pop())||0),0)+1;const id=`SMP-${new Date().getFullYear()}-${String(n).padStart(3,"0")}`;const trade={id,sector:sector.value,ticker:ticker.value,company:company.value,planWeight:planWeight.value,action:action.value,newWeight:parseFloat(newWeight.value),amount:parseFloat(amount.value)||null,price:parseFloat(price.value)||null,rationale:rationale.value,risks:risks.value,leadName:leadName.value,planVersion:planVersion.value,status:"Submitted",stage:"Compliance Officer",submittedAt:new Date().toISOString(),reviews:{},execution:null};trades.unshift(trade);state.trades=trades;e.target.reset();renderSubmitSelectors();renderAll();alert(`${id} submitted to Compliance Officer.`)};
@@ -114,4 +160,145 @@ function renderMacro(){const data=state.macro;macroGrid.innerHTML=macroItems.map
 function exportTradeHistory(){const rows=[["Trade ID","Ticker","Action","Sector","Status","Submitted","Executed Shares","Execution Price","Execution Time","Order Type","Reference"]];state.trades.forEach(t=>rows.push([t.id,t.ticker,t.action,t.sector,t.status,t.submittedAt,t.execution?.shares||"",t.execution?.price||"",t.execution?.at||"",t.execution?.orderType||"",t.execution?.reference||""]));downloadText("Troy_SMP_Trade_History.csv",rows.map(r=>r.map(csvCell).join(",")).join("\n"))} function csvCell(v){const s=String(v??"");return/[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s} function downloadText(name,text){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"text/plain"}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)} function downloadBackup(){const backup={exportedAt:new Date().toISOString(),plan:state.plan,trades:state.trades,holdings:state.holdings,cash:state.cash,snapshots:state.snapshots,benchmarks:state.benchmarks,macro:state.macro};downloadText(`Troy_SMP_Backup_${new Date().toISOString().slice(0,10)}.json`,JSON.stringify(backup,null,2))}
 function renderAll(){renderPlan();renderSubmitSelectors();renderQueue();renderApproved();renderHistory();renderDashboard();renderLive();renderPerformance();renderMacro()} renderAll();
 </script>
+
+<script>
+// ===== Supabase shared-data integration =====
+const SUPABASE_URL = "https://edlvrtuwhrmpvsvpkyad.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_Ahsv_gIZfbIY-Dks5pfARA_OfHcfsS1";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+let authUser = null;
+let authProfile = null;
+const shared = { trades: [], holdings: [], snapshots: [], cash: 0 };
+
+// Keep portfolio plan, benchmark imports, and macro notes local for now; core portfolio/trade data are shared.
+Object.defineProperties(state, {
+  trades: { configurable:true, get(){return shared.trades}, set(v){shared.trades=v} },
+  holdings: { configurable:true, get(){return shared.holdings}, set(v){shared.holdings=v} },
+  snapshots: { configurable:true, get(){return shared.snapshots}, set(v){shared.snapshots=v} },
+  cash: { configurable:true, get(){return shared.cash}, set(v){shared.cash=Number(v)||0} }
+});
+
+currentRole = function(){ return authProfile?.role || "Student"; };
+roleSelect.onchange = null;
+
+function setAuthUI(){
+  const signedIn=!!authUser && !!authProfile;
+  document.getElementById('authOverlay').classList.toggle('hidden', signedIn);
+  document.getElementById('userName').textContent = authProfile?.full_name || authUser?.email || 'Not signed in';
+  document.getElementById('userRole').textContent = authProfile?.role || '—';
+  roleSelect.value = authProfile?.role || 'Student';
+  document.getElementById('logoutBtn').style.display = signedIn ? '' : 'none';
+  const canImport = ['Instructor'].includes(currentRole());
+  document.getElementById('holdingsFile').disabled = !canImport;
+  document.getElementById('cashInput').disabled = !['Instructor','Head Trader'].includes(currentRole());
+}
+
+async function loadProfile(){
+  const {data:{user}} = await sb.auth.getUser(); authUser=user;
+  if(!user){authProfile=null; setAuthUI(); return false;}
+  const {data,error}=await sb.from('profiles').select('*').eq('id',user.id).single();
+  if(error){authProfile=null; document.getElementById('authError').textContent='Your login exists, but no portfolio role profile was found. Contact the instructor.'; setAuthUI(); return false;}
+  authProfile=data; setAuthUI(); return true;
+}
+
+function deriveTradeStage(row, aps, ex){
+  const reviews={}; (aps||[]).forEach(a=>reviews[a.reviewer_role]={decision:a.decision,comment:a.comments||'',at:a.created_at});
+  let status='Submitted', stage='Compliance Officer';
+  const latest=[...(aps||[])].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  const terminal=[...latest].reverse().find(a=>['Rejected','Returned'].includes(a.decision));
+  if(terminal){ status=terminal.decision==='Rejected'?'Rejected':'Returned for Revision'; stage=terminal.decision==='Rejected'?'Closed':'Sector Lead'; }
+  else if(ex){ status='Executed'; stage='Closed'; }
+  else if(reviews['Instructor']){ status=reviews['Instructor'].decision==='Approved'?'Approved to Trade':reviews['Instructor'].decision==='Returned'?'Returned for Revision':reviews['Instructor'].decision; stage=status.startsWith('Approved')?'Head Trader Execution':(status==='Rejected'?'Closed':'Sector Lead'); }
+  else if(reviews['Portfolio Director']){ status='Portfolio Director completed'; stage='Instructor'; }
+  else if(reviews['Compliance Officer']){ status='Compliance Officer completed'; stage='Portfolio Director'; }
+  return {status,stage,reviews};
+}
+
+async function loadSharedData(){
+  const [tr,ap,ex,ho,sn,sp] = await Promise.all([
+    sb.from('trade_requests').select('*').order('created_at',{ascending:false}),
+    sb.from('approvals').select('*').order('created_at',{ascending:true}),
+    sb.from('executions').select('*').order('created_at',{ascending:true}),
+    sb.from('holdings').select('*').order('ticker',{ascending:true}),
+    sb.from('portfolio_snapshots').select('*').order('snapshot_date',{ascending:true}),
+    sb.from('sector_performance').select('*').order('performance_date',{ascending:true})
+  ]);
+  const errs=[tr,ap,ex,ho,sn,sp].map(x=>x.error).filter(Boolean); if(errs.length) console.warn('Supabase load warnings',errs);
+  const approvalsBy={}; (ap.data||[]).forEach(a=>(approvalsBy[a.trade_request_id]??=[]).push(a));
+  const execBy={}; (ex.data||[]).forEach(e=>execBy[e.trade_request_id]=e);
+  shared.trades=(tr.data||[]).map(r=>{const e=execBy[r.id];const d=deriveTradeStage(r,approvalsBy[r.id]||[],e);return {
+    dbId:r.id,id:r.trade_code,ticker:r.ticker,company:r.company_name||'',sector:r.sector||'',action:r.action,newWeight:Number(r.requested_weight||r.target_weight||0),
+    amount:null,price:r.proposed_price==null?null:Number(r.proposed_price),rationale:r.rationale||'',risks:r.risks||'',leadName:'Submitted user',planVersion:'Shared database',submittedAt:r.created_at,
+    status:d.status,stage:d.stage,reviews:d.reviews,execution:e?{shares:Number(e.executed_shares||0),price:Number(e.execution_price||0),orderType:e.order_type||'',reference:e.investopedia_reference||'',at:e.execution_time||e.created_at}:null
+  }});
+  shared.holdings=(ho.data||[]).map(h=>({ticker:h.ticker,company:h.company_name||'',sector:h.sector||'Unclassified',shares:Number(h.shares||0),lastPrice:Number(h.last_price||0),avgCost:Number(h.avg_cost_per_share||0),totalCost:Number(h.total_cost||0),marketValue:Number(h.market_value||0),dayGainPct:Number(h.day_gain_pct||0),dayGain:Number(h.day_gain_dollar||0),totalGainPct:Number(h.total_gain_pct||0),totalGain:Number(h.total_gain_dollar||0),targetWeight:h.target_weight==null?'':Number(h.target_weight)}));
+  const sectorByDate={}; (sp.data||[]).forEach(x=>{const d=String(x.performance_date);(sectorByDate[d]??={})[x.sector]=Number(x.portfolio_return_pct||0)});
+  shared.snapshots=(sn.data||[]).map(s=>({date:String(s.snapshot_date),totalValue:Number(s.portfolio_value||0),cash:Number(s.cash_value||0),sectorValues:sectorByDate[String(s.snapshot_date)]||{}}));
+  shared.cash=shared.snapshots.length?Number(shared.snapshots[shared.snapshots.length-1].cash||0):0;
+  renderAll(); setAuthUI();
+}
+
+loginForm.onsubmit=async e=>{e.preventDefault();authError.textContent='Signing in…';const {error}=await sb.auth.signInWithPassword({email:loginEmail.value.trim(),password:loginPassword.value});if(error){authError.textContent=error.message;return}authError.textContent='';if(await loadProfile()) await loadSharedData();};
+logoutBtn.onclick=async()=>{await sb.auth.signOut();authUser=null;authProfile=null;shared.trades=[];shared.holdings=[];shared.snapshots=[];shared.cash=0;setAuthUI();renderAll();};
+
+// Shared trade submission
+document.getElementById('tradeForm').onsubmit=async e=>{
+  e.preventDefault();
+  if(!['Sector Lead','Equity Analyst','Instructor'].includes(currentRole())){alert('Your role cannot submit trade recommendations.');return;}
+  if(currentRole()==='Sector Lead' && !authProfile?.sector){alert('Your Sector Lead profile does not have an assigned sector. Contact the instructor.');return;}
+  if(['Sector Lead','Equity Analyst'].includes(currentRole()) && authProfile?.sector && sector.value!==authProfile.sector){alert('You may submit recommendations only for your assigned sector.');renderSubmitSelectors();return;}
+  const year=new Date().getFullYear(); const nums=shared.trades.filter(t=>t.id.startsWith(`SMP-${year}-`)).map(t=>parseInt(t.id.split('-').pop())||0); const code=`SMP-${year}-${String((Math.max(0,...nums)+1)).padStart(3,'0')}`;
+  const p=state.plan.find(x=>x.sector===sector.value&&x.ticker===ticker.value);
+  const payload={trade_code:code,ticker:ticker.value,company_name:company.value||p?.company||'',sector:sector.value,action:action.value,requested_shares:null,requested_weight:Number(newWeight.value)||null,current_weight:null,target_weight:p?.targetWeight??null,proposed_price:Number(price.value)||null,order_type:'Market',rationale:rationale.value,catalyst:null,risks:risks.value,submitted_by:authUser.id,status:'Submitted'};
+  const {error}=await sb.from('trade_requests').insert(payload); if(error){alert('Trade could not be submitted: '+error.message);return;}
+  e.target.reset(); renderSubmitSelectors(); await loadSharedData(); alert(`${code} submitted to Compliance Officer.`);
+};
+
+act=async function(code,decision){
+  const t=shared.trades.find(x=>x.id===code); if(!t)return;
+  const role=currentRole(); if(!['Compliance Officer','Portfolio Director','Instructor'].includes(role)){alert('Your role cannot review this trade.');return;}
+  const comment=prompt(`${role} comments (optional):`)||'';
+  const map={"Approve":"Approved","Approve with Modification":"Approved","Complete Review":"Approved","Return for Revision":"Returned","Reject":"Rejected"};
+  const {error}=await sb.from('approvals').insert({trade_request_id:t.dbId,reviewer_id:authUser.id,reviewer_role:role,decision:map[decision]||'Approved',comments:decision==='Approve with Modification'?('Approved with modification. '+comment):comment});
+  if(error){alert('Review could not be recorded: '+error.message);return;}
+  if(role==='Instructor'){
+    const st=decision==='Reject'?'Rejected':decision==='Return for Revision'?'Returned for Revision':decision==='Approve with Modification'?'Approved with Modification':'Approved to Trade';
+    await sb.from('trade_requests').update({status:st}).eq('id',t.dbId);
+  }
+  await loadSharedData();
+};
+
+executeTrade=async function(code){
+  if(!['Head Trader','Instructor'].includes(currentRole())){alert('Only the Head Trader or Instructor can record an execution.');return;}
+  const t=shared.trades.find(x=>x.id===code); if(!t)return;
+  const shares=prompt('Shares executed:'); if(shares===null)return; const px=prompt('Execution price:'); if(px===null)return;
+  const orderType=prompt('Order type (Market/Limit):','Market')||'Market'; const ref=prompt('Investopedia order/reference number (optional):')||'';
+  const {error}=await sb.from('executions').insert({trade_request_id:t.dbId,executed_by:authUser.id,executed_shares:Number(shares),execution_price:Number(px),order_type:orderType,execution_time:new Date().toISOString(),investopedia_reference:ref});
+  if(error){alert('Execution could not be recorded: '+error.message);return;} await loadSharedData();
+};
+
+// Instructor-only shared holdings import
+document.getElementById('holdingsFile').onchange=async e=>{
+  const file=e.target.files[0]; if(!file)return; if(currentRole()!=='Instructor'){alert('Only the Instructor can replace the shared holdings file.');e.target.value='';return;}
+  const rows=await readRows(file); const planMap=Object.fromEntries(state.plan.map(p=>[p.ticker,p]));
+  const holdings=rows.map(r=>{const ticker=String(pick(r,['Symbol','Ticker','Stock','Stock Ticker'])||'').trim().toUpperCase();const shares=num(pick(r,['Shares','Quantity','Qty']));const lastPrice=num(pick(r,['Last Price','Price','Current Price','Market Price']));const avgCost=num(pick(r,['Average Cost per Share','Avg Cost/Share','Average Cost','Cost Basis Per Share','Avg Price']));const totalCost=num(pick(r,['Total Cost','Cost Basis','Cost']))||shares*avgCost;const marketValue=num(pick(r,['Market Value','Value','Current Value']))||shares*lastPrice;const dayGainPct=num(pick(r,['Day Gain %','Daily Gain %','Day %']));const dayGain=num(pick(r,['Day Gain $','Daily Gain $','Day Gain','Daily Gain']));const totalGain=num(pick(r,['Total Gain $','Gain/Loss $','Total Gain','Unrealized Gain/Loss']))||marketValue-totalCost;const totalGainPct=num(pick(r,['Total Gain %','Gain/Loss %','Total Return %']))||(totalCost?totalGain/totalCost*100:0);const sector=pick(r,['Sector','GICS Sector','S&P Sector'])||planMap[ticker]?.sector||'Unclassified';return {ticker,company_name:planMap[ticker]?.company||'',sector,shares,last_price:lastPrice,avg_cost_per_share:avgCost,total_cost:totalCost,market_value:marketValue,day_gain_pct:dayGainPct,day_gain_dollar:dayGain,total_gain_pct:totalGainPct,total_gain_dollar:totalGain,target_weight:planMap[ticker]?.targetWeight??null,portfolio_weight:null,updated_at:new Date().toISOString()}}).filter(x=>x.ticker&&x.shares!==0);
+  if(!holdings.length){alert('No holdings rows detected.');return;}
+  let q=await sb.from('holdings').delete().neq('id',0); if(q.error){alert('Could not clear prior holdings: '+q.error.message);return;}
+  q=await sb.from('holdings').insert(holdings); if(q.error){alert('Could not upload holdings: '+q.error.message);return;}
+  e.target.value=''; await loadSharedData(); alert(`Uploaded ${holdings.length} shared holdings.`);
+};
+
+saveCash=async function(){ shared.cash=num(cashInput.value); renderAll(); alert('Cash updated for this session. Save a Daily Snapshot to store it in the shared database.'); };
+saveSnapshot=async function(){
+  if(!['Head Trader','Instructor'].includes(currentRole())){alert('Only the Head Trader or Instructor can save portfolio snapshots.');return;}
+  const totals=holdingsTotals(); if(!state.holdings.length&&!state.cash){alert('Import holdings or enter cash before saving a snapshot.');return;}
+  const date=new Date().toISOString().slice(0,10);
+  const {error}=await sb.from('portfolio_snapshots').insert({snapshot_date:date,portfolio_value:totals.total,cash_value:state.cash,total_cost:totals.cost,day_return_pct:null,cumulative_return_pct:null,spy_return_pct:null});
+  if(error){alert('Snapshot could not be saved: '+error.message);return;}
+  await loadSharedData(); alert(`Saved shared portfolio snapshot for ${date}.`);
+};
+
+(async()=>{ const {data:{session}}=await sb.auth.getSession(); if(session && await loadProfile()) await loadSharedData(); else setAuthUI(); })();
+</script>
+
 </body></html>
