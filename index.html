@@ -213,7 +213,60 @@ function deriveTradeStage(row, aps, ex){
   else if(reviews['Compliance Officer']){ status='Compliance Officer completed'; stage='Portfolio Director'; }
   return {status,stage,reviews};
 }
+async function refreshMarketPrices(){
+  if(!shared.holdings || !shared.holdings.length) return;
 
+  try{
+    const symbols=shared.holdings.map(h=>h.ticker);
+
+    const {data,error}=await sb.functions.invoke('hyper-responder',{
+      body:{symbols}
+    });
+
+    if(error){
+      console.warn('Market price update failed',error);
+      return;
+    }
+
+    if(!data || !data.prices) return;
+
+    shared.holdings=shared.holdings.map(h=>{
+      const q=data.prices[h.ticker];
+
+      if(!q || !q.price) return h;
+
+      const lastPrice=Number(q.price);
+      const previousClose=Number(q.previousClose||0);
+
+      const marketValue=h.shares*lastPrice;
+      const totalGain=marketValue-h.totalCost;
+      const totalGainPct=h.totalCost
+        ? (totalGain/h.totalCost)*100
+        : 0;
+
+      const dayGain=previousClose
+        ? (lastPrice-previousClose)*h.shares
+        : 0;
+
+      const dayGainPct=previousClose
+        ? ((lastPrice-previousClose)/previousClose)*100
+        : 0;
+
+      return {
+        ...h,
+        lastPrice,
+        marketValue,
+        dayGain,
+        dayGainPct,
+        totalGain,
+        totalGainPct
+      };
+    });
+
+  }catch(err){
+    console.warn('Unable to refresh market prices',err);
+  }
+}
 async function loadSharedData(){
   const [tr,ap,ex,ho,sn,sp,pp] = await Promise.all([
     sb.from('trade_requests').select('*').order('created_at',{ascending:false}),
@@ -240,7 +293,11 @@ async function loadSharedData(){
   const sectorByDate={}; (sp.data||[]).forEach(x=>{const d=String(x.performance_date);(sectorByDate[d]??={})[x.sector]=Number(x.portfolio_return_pct||0)});
   shared.snapshots=(sn.data||[]).map(s=>({date:String(s.snapshot_date),totalValue:Number(s.portfolio_value||0),cash:Number(s.cash_value||0),sectorValues:sectorByDate[String(s.snapshot_date)]||{}}));
   shared.cash=shared.snapshots.length?Number(shared.snapshots[shared.snapshots.length-1].cash||0):0;
-  renderAll(); setAuthUI();
+
+await refreshMarketPrices();
+
+renderAll();
+setAuthUI();
 }
 
 loginForm.onsubmit=async e=>{e.preventDefault();authError.textContent='Signing in…';const {error}=await sb.auth.signInWithPassword({email:loginEmail.value.trim(),password:loginPassword.value});if(error){authError.textContent=error.message;return}authError.textContent='';if(await loadProfile()) await loadSharedData();};
