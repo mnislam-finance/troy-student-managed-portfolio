@@ -304,13 +304,162 @@ document.getElementById('excelFile').onchange=async e=>{
 
 // Instructor-only shared holdings import
 document.getElementById('holdingsFile').onchange=async e=>{
-  const file=e.target.files[0]; if(!file)return; if(currentRole()!=='Instructor'){alert('Only the Instructor can replace the shared holdings file.');e.target.value='';return;}
-  const rows=await readRows(file); const planMap=Object.fromEntries(state.plan.map(p=>[p.ticker,p]));
-  const holdings=rows.map(r=>{const ticker=String(pick(r,['Symbol','Ticker','Stock','Stock Ticker'])||'').trim().toUpperCase();const shares=num(pick(r,['Shares','Quantity','Qty']));const lastPrice=num(pick(r,['Last Price','Price','Current Price','Market Price']));const avgCost=num(pick(r,['Average Cost per Share','Avg Cost/Share','Average Cost','Cost Basis Per Share','Avg Price']));const totalCost=num(pick(r,['Total Cost','Cost Basis','Cost']))||shares*avgCost;const marketValue=num(pick(r,['Market Value','Value','Current Value']))||shares*lastPrice;const dayGainPct=num(pick(r,['Day Gain %','Daily Gain %','Day %']));const dayGain=num(pick(r,['Day Gain $','Daily Gain $','Day Gain','Daily Gain']));const totalGain=num(pick(r,['Total Gain $','Gain/Loss $','Total Gain','Unrealized Gain/Loss']))||marketValue-totalCost;const totalGainPct=num(pick(r,['Total Gain %','Gain/Loss %','Total Return %']))||(totalCost?totalGain/totalCost*100:0);const sector=pick(r,['Sector','GICS Sector','S&P Sector'])||planMap[ticker]?.sector||'Unclassified';return {ticker,company_name:planMap[ticker]?.company||'',sector,shares,last_price:lastPrice,avg_cost_per_share:avgCost,total_cost:totalCost,market_value:marketValue,day_gain_pct:dayGainPct,day_gain_dollar:dayGain,total_gain_pct:totalGainPct,total_gain_dollar:totalGain,target_weight:planMap[ticker]?.targetWeight??null,portfolio_weight:null,updated_at:new Date().toISOString()}}).filter(x=>x.ticker&&x.shares!==0);
-  if(!holdings.length){alert('No holdings rows detected.');return;}
-  let q=await sb.from('holdings').delete().neq('id',0); if(q.error){alert('Could not clear prior holdings: '+q.error.message);return;}
-  q=await sb.from('holdings').insert(holdings); if(q.error){alert('Could not upload holdings: '+q.error.message);return;}
-  e.target.value=''; await loadSharedData(); alert(`Uploaded ${holdings.length} shared holdings.`);
+  const file=e.target.files[0];
+  if(!file)return;
+
+  if(currentRole()!=='Instructor'){
+    alert('Only the Instructor can import Investopedia Trade History.');
+    e.target.value='';
+    return;
+  }
+
+  const rows=await readRows(file);
+  const planMap=Object.fromEntries(state.plan.map(p=>[p.ticker,p]));
+  const oldHoldings=Object.fromEntries(shared.holdings.map(h=>[h.ticker,h]));
+
+  function tradeTime(r){
+    const v=pick(r,['Date','Trade Date','Transaction Date']);
+    if(typeof v==='number'){
+      return Math.round((v-25569)*86400*1000);
+    }
+    const t=Date.parse(v);
+    return Number.isFinite(t)?t:0;
+  }
+
+  const trades=rows.map((r,i)=>({
+    ticker:String(pick(r,['Symbol','Ticker','Stock','Stock Ticker'])||'').trim().toUpperCase(),
+    type:String(pick(r,['Trade Type','Type','Action','Transaction Type'])||'').toLowerCase(),
+    qty:num(pick(r,['Quantity','Shares','Qty'])),
+    price:num(pick(r,['Price','Trade Price','Execution Price'])),
+    time:tradeTime(r),
+    order:i
+  }))
+  .filter(t=>t.ticker && t.qty>0 && t.price>0 && (t.type.includes('buy') || t.type.includes('sell')))
+  .sort((a,b)=>a.time-b.time || a.order-b.order);
+
+  if(!trades.length){
+    alert('No Investopedia buy/sell transactions were detected. The file should contain Date, Symbol, Trade Type, Quantity, and Price.');
+    e.target.value='';
+    return;
+  }
+
+  const positions={};
+  let cash=1000000;
+
+  for(const t of trades){
+    if(!positions[t.ticker]){
+      positions[t.ticker]={shares:0,avgCost:0};
+    }
+
+    const p=positions[t.ticker];
+
+    if(t.type.includes('buy')){
+      const oldCost=p.shares*p.avgCost;
+      const newCost=t.qty*t.price;
+      p.shares+=t.qty;
+      p.avgCost=p.shares ? (oldCost+newCost)/p.shares : 0;
+      cash-=newCost;
+    }
+
+    if(t.type.includes('sell')){
+      const sellQty=Math.min(t.qty,p.shares);
+      p.shares-=sellQty;
+      cash+=t.qty*t.price;
+
+      if(p.shares<=0){
+        p.shares=0;
+        p.avgCost=0;
+      }
+    }
+  }
+
+  const holdings=Object.entries(positions)
+    .filter(([ticker,p])=>p.shares>0)
+    .map(([ticker,p])=>{
+      const previous=oldHoldings[ticker];
+      const plan=planMap[ticker];
+
+      const lastPrice=
+        previous && Number(previous.lastPrice)>0
+          ? Number(previous.lastPrice)
+          : p.avgCost;
+
+      const totalCost=p.shares*p.avgCost;
+      const marketValue=p.shares*lastPrice;
+      const totalGain=marketValue-totalCost;
+      const totalGainPct=totalCost ? totalGain/totalCost*100 : 0;
+
+      return {
+        ticker,
+        company_name:plan?.company || previous?.company || '',
+        sector:plan?.sector || previous?.sector || 'Unclassified',
+        shares:p.shares,
+        last_price:lastPrice,
+        avg_cost_per_share:p.avgCost,
+        total_cost:totalCost,
+        market_value:marketValue,
+        day_gain_pct:0,
+        day_gain_dollar:0,
+        total_gain_pct:totalGainPct,
+        total_gain_dollar:totalGain,
+        target_weight:plan?.targetWeight ?? previous?.targetWeight ?? null,
+        portfolio_weight:null,
+        updated_at:new Date().toISOString()
+      };
+    });
+
+  if(!holdings.length){
+    alert('The trade history produced no current stock holdings.');
+    e.target.value='';
+    return;
+  }
+
+  let q=await sb.from('holdings').delete().neq('id',0);
+
+  if(q.error){
+    alert('Could not clear prior holdings: '+q.error.message);
+    return;
+  }
+
+  q=await sb.from('holdings').insert(holdings);
+
+  if(q.error){
+    alert('Could not upload reconstructed holdings: '+q.error.message);
+    return;
+  }
+
+  shared.cash=cash;
+
+  const portfolioValue=
+    cash + holdings.reduce((sum,h)=>sum+h.market_value,0);
+
+  const totalCost=
+    holdings.reduce((sum,h)=>sum+h.total_cost,0);
+
+  const today=new Date().toISOString().slice(0,10);
+
+  await sb.from('portfolio_snapshots')
+    .delete()
+    .eq('snapshot_date',today);
+
+  await sb.from('portfolio_snapshots').insert({
+    snapshot_date:today,
+    portfolio_value:portfolioValue,
+    cash_value:cash,
+    total_cost:totalCost,
+    day_return_pct:null,
+    cumulative_return_pct:null,
+    spy_return_pct:null
+  });
+
+  e.target.value='';
+  await loadSharedData();
+
+  alert(
+    `Investopedia Trade History imported successfully.\n\n`+
+    `${holdings.length} current holdings reconstructed.\n`+
+    `Calculated cash: ${money(cash)}`
+  );
 };
 
 saveCash=async function(){ shared.cash=num(cashInput.value); renderAll(); alert('Cash updated for this session. Save a Daily Snapshot to store it in the shared database.'); };
