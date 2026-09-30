@@ -317,13 +317,13 @@ async function refreshMarketPrices(){
   const symbols = state.holdings.map(h => h.ticker);
 
   let offset = 0;
-  const waitTime = 65000; // 65 seconds between batches
+  const waitTime = 70000; // 65 seconds between batches
 
   while(offset !== null){
 
     try{
       console.log(
-        `Updating market prices ${offset + 1}–${Math.min(offset + 8, symbols.length)} of ${symbols.length}`
+        `Updating market prices ${offset + 1}–${Math.min(offset + 6, symbols.length)} of ${symbols.length}`
       );
 
       const {data,error} = await sb.functions.invoke(
