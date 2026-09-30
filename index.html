@@ -99,105 +99,7 @@ document.querySelectorAll("nav button").forEach(btn=>btn.onclick=()=>{document.q
 function normalizeKey(k){return String(k||"").trim().toLowerCase().replace(/[%_\-]/g," ").replace(/\s+/g," ")} function pick(obj,keys){const entries=Object.entries(obj);for(const key of keys){const found=entries.find(([k])=>normalizeKey(k)===normalizeKey(key));if(found)return found[1]}return""} function num(v){if(v===null||v===undefined||v==="")return 0;const n=parseFloat(String(v).replace(/[$,%]/g,""));return Number.isFinite(n)?n:0} function parseWeight(v){if(v===null||v===undefined||v==="")return"";if(typeof v==="number")return v<=1?v*100:v;let s=String(v).replace("%","").trim();let n=parseFloat(s);if(Number.isNaN(n))return"";return n<=1&&!String(v).includes("%")?n*100:n} function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))} function fmtDate(s){return new Date(s).toLocaleString()} function money(v){return Number(v||0).toLocaleString(undefined,{style:"currency",currency:"USD",maximumFractionDigits:2})} function pct(v){return Number.isFinite(v)?v.toFixed(2)+"%":"—"}
 async function readRows(file){const data=await file.arrayBuffer();const wb=XLSX.read(data,{type:"array"});let rows=[];for(const name of wb.SheetNames)rows.push(...XLSX.utils.sheet_to_json(wb.Sheets[name],{defval:""}));return rows}
 /* Portfolio Plan import is handled by the shared Supabase handler below. */
-document.getElementById("holdingsFile").addEventListener("change", async e => {
-  const file = e.target.files[0];
-  if (!file) return;
 
-  const rows = await readRows(file);
-
-  const planMap = Object.fromEntries(
-    state.plan.map(p => [String(p.ticker).toUpperCase(), p])
-  );
-
-  const byTicker = {};
-
-  rows.forEach(r => {
-    const ticker = String(
-      pick(r, ["Symbol", "Ticker", "Stock", "Stock Ticker"]) || ""
-    ).trim().toUpperCase();
-
-    if (!ticker) return;
-
-    const tradeType = String(
-      pick(r, ["Trade Type", "Type", "Action", "Transaction Type"]) || ""
-    ).trim().toLowerCase();
-
-    const qty = Math.abs(
-      num(pick(r, ["Quantity", "Shares", "Qty"]))
-    );
-
-    const price = num(
-      pick(r, ["Price", "Execution Price", "Trade Price"])
-    );
-
-    if (!qty || !price) return;
-
-    if (!byTicker[ticker]) {
-      byTicker[ticker] = {
-        ticker,
-        shares: 0,
-        totalCost: 0
-      };
-    }
-
-    const h = byTicker[ticker];
-
-    if (tradeType.includes("buy")) {
-      h.totalCost += qty * price;
-      h.shares += qty;
-    } else if (tradeType.includes("sell")) {
-      if (h.shares > 0) {
-        const avgCostBeforeSale = h.totalCost / h.shares;
-        const sharesToRemove = Math.min(qty, h.shares);
-
-        h.totalCost -= avgCostBeforeSale * sharesToRemove;
-        h.shares -= sharesToRemove;
-
-        if (h.shares <= 0.000001) {
-          h.shares = 0;
-          h.totalCost = 0;
-        }
-      }
-    }
-  });
-
-  const holdings = Object.values(byTicker)
-    .filter(h => h.shares > 0)
-    .map(h => {
-      const avgCost = h.totalCost / h.shares;
-      const plan = planMap[h.ticker];
-
-      return {
-        ticker: h.ticker,
-        shares: h.shares,
-        avgCost,
-        totalCost: h.totalCost,
-        lastPrice: 0,
-        marketValue: 0,
-        dayGainPct: 0,
-        dayGain: 0,
-        totalGainPct: 0,
-        totalGain: 0,
-        sector: plan?.sector || "Unclassified",
-        targetWeight: plan?.targetWeight ?? ""
-      };
-    });
-
-  if (!holdings.length) {
-    alert("No open holdings were detected from the uploaded trade history.");
-    return;
-  }
-
-state.holdings = holdings;
-
-await refreshMarketPrices();
-
-renderAll();
-
-alert(
-  `Imported trade history and updated ${holdings.length} holdings with current market prices.`
-);
-});
 document.getElementById("benchmarkFile").addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;const rows=await readRows(file);const parsed=rows.map(r=>{const out={date:pick(r,["Date","Trading Date"])};Object.values(ETF_MAP).forEach(sym=>{out[sym]=num(pick(r,[sym,`${sym} Return`,`Return ${sym}`]))});return out}).filter(x=>x.date);if(!parsed.length){alert("No benchmark rows with a Date column were detected.");return}state.benchmarks=parsed;renderPerformance();alert(`Imported ${parsed.length} benchmark rows.`)});
 function renderPlan(){document.getElementById("planBody").innerHTML=state.plan.map(p=>`<tr><td>${esc(p.sector)}</td><td>${esc(p.ticker)}</td><td>${esc(p.company||"")}</td><td>${p.targetWeight!==""?Number(p.targetWeight).toFixed(2)+"%":""}</td></tr>`).join("")}
 function renderSubmitSelectors(){
@@ -311,23 +213,39 @@ function deriveTradeStage(row, aps, ex){
   else if(reviews['Compliance Officer']){ status='Compliance Officer completed'; stage='Portfolio Director'; }
   return {status,stage,reviews};
 }
+let marketRefreshRunning = false;
+
 async function refreshMarketPrices(){
-  if(!state.holdings || !state.holdings.length) return;
+  if(marketRefreshRunning){
+    console.log("Market price refresh already running.");
+    return;
+  }
+
+  if(!state.holdings || !state.holdings.length){
+    return;
+  }
+
+  marketRefreshRunning = true;
 
   const symbols = state.holdings.map(h => h.ticker);
 
   let offset = 0;
-  const waitTime = 70000; // 65 seconds between batches
+  const batchSize = 6;
+  const waitTime = 70000; // 70 seconds between batches
 
-  while(offset !== null){
+  try{
 
-    try{
+    while(offset !== null){
+
       console.log(
-        `Updating market prices ${offset + 1}–${Math.min(offset + 6, symbols.length)} of ${symbols.length}`
+        `Updating market prices ${offset + 1}–${Math.min(
+          offset + batchSize,
+          symbols.length
+        )} of ${symbols.length}`
       );
 
       const {data,error} = await sb.functions.invoke(
-        'hyper-responder',
+        "hyper-responder",
         {
           body:{
             symbols,
@@ -338,7 +256,7 @@ async function refreshMarketPrices(){
 
       if(error){
         console.warn(
-          'Market price batch failed. Waiting before retry...',
+          "Market price batch failed. Waiting 70 seconds before retry...",
           error
         );
 
@@ -350,14 +268,21 @@ async function refreshMarketPrices(){
       }
 
       if(!data || !data.prices){
-        console.warn('No price data returned.');
-        return;
+        console.warn("No market price data returned.");
+        break;
       }
+
+      const processedSymbols =
+        Array.isArray(data.processed)
+          ? data.processed
+          : [];
 
       state.holdings = state.holdings.map(h => {
         const q = data.prices[h.ticker];
 
-        if(!q || !q.price) return h;
+        if(!q || !q.price){
+          return h;
+        }
 
         const lastPrice = Number(q.price);
         const previousClose = Number(q.previousClose || 0);
@@ -391,42 +316,75 @@ async function refreshMarketPrices(){
         };
       });
 
+      for(const ticker of processedSymbols){
+        const h = state.holdings.find(
+          x => x.ticker === ticker
+        );
+
+        if(!h) continue;
+
+        const {error:updateError} = await sb
+          .from("holdings")
+          .update({
+            last_price: h.lastPrice,
+            market_value: h.marketValue,
+            day_gain_pct: h.dayGainPct,
+            day_gain_dollar: h.dayGain,
+            total_gain_pct: h.totalGainPct,
+            total_gain_dollar: h.totalGain,
+            updated_at: new Date().toISOString()
+          })
+          .eq("ticker", h.ticker);
+
+        if(updateError){
+          console.warn(
+            `Could not save market price for ${h.ticker}`,
+            updateError
+          );
+        }
+      }
+
       renderAll();
 
       console.log(
-        'Updated:',
-        data.processed
+        "Updated symbols:",
+        processedSymbols
       );
 
-      offset = data.nextOffset;
+      offset =
+        data.nextOffset === null ||
+        data.nextOffset === undefined
+          ? null
+          : Number(data.nextOffset);
 
       if(offset !== null){
         console.log(
-          'Waiting 65 seconds before next price batch...'
+          "Waiting 70 seconds before the next market-price batch..."
         );
 
         await new Promise(resolve =>
           setTimeout(resolve, waitTime)
         );
       }
-
-    }catch(err){
-      console.warn(
-        'Unable to refresh market prices',
-        err
-      );
-
-      await new Promise(resolve =>
-        setTimeout(resolve, waitTime)
-      );
     }
+
+    renderAll();
+
+    console.log(
+      `Market price refresh completed for ${symbols.length} holdings.`
+    );
+
+  }catch(err){
+
+    console.warn(
+      "Unable to refresh market prices",
+      err
+    );
+
+  }finally{
+
+    marketRefreshRunning = false;
   }
-
-  renderAll();
-
-  console.log(
-    `Market price refresh completed for ${symbols.length} holdings.`
-  );
 }
 async function loadSharedData(){
   const [tr,ap,ex,ho,sn,sp,pp] = await Promise.all([
@@ -455,7 +413,7 @@ async function loadSharedData(){
   shared.snapshots=(sn.data||[]).map(s=>({date:String(s.snapshot_date),totalValue:Number(s.portfolio_value||0),cash:Number(s.cash_value||0),sectorValues:sectorByDate[String(s.snapshot_date)]||{}}));
   shared.cash=shared.snapshots.length?Number(shared.snapshots[shared.snapshots.length-1].cash||0):0;
 
-await refreshMarketPrices();
+
 
 renderAll();
 setAuthUI();
@@ -517,7 +475,11 @@ document.getElementById('excelFile').onchange=async e=>{
   if(q.error){alert('Could not clear prior Portfolio Plan: '+q.error.message);return;}
   q=await sb.from('portfolio_plan').insert(plan);
   if(q.error){alert('Could not upload Portfolio Plan: '+q.error.message);return;}
-  e.target.value=''; await loadSharedData(); alert(`Uploaded ${plan.length} shared Portfolio Plan rows.`);
+e.target.value='';
+
+await loadSharedData();
+
+alert(`Uploaded ${plan.length} shared Portfolio Plan rows.`);
 };
 
 // Instructor-only shared holdings import
@@ -671,13 +633,16 @@ document.getElementById('holdingsFile').onchange=async e=>{
   });
 
   e.target.value='';
-  await loadSharedData();
 
-  alert(
-    `Investopedia Trade History imported successfully.\n\n`+
-    `${holdings.length} current holdings reconstructed.\n`+
-    `Calculated cash: ${money(cash)}`
-  );
+await loadSharedData();
+
+await refreshMarketPrices();
+
+alert(
+  `Investopedia Trade History imported successfully.\n\n`+
+  `${holdings.length} current holdings reconstructed.\n`+
+  `Calculated cash: ${money(cash)}`
+);
 };
 
 saveCash=async function(){ shared.cash=num(cashInput.value); renderAll(); alert('Cash updated for this session. Save a Daily Snapshot to store it in the shared database.'); };
