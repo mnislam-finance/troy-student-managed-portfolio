@@ -188,12 +188,9 @@ document.getElementById("holdingsFile").addEventListener("change", async e => {
     return;
   }
 
-  state.holdings = holdings;
-shared.holdings = holdings;
+state.holdings = holdings;
 
 await refreshMarketPrices();
-
-state.holdings = shared.holdings;
 
 renderAll();
 
@@ -315,10 +312,9 @@ function deriveTradeStage(row, aps, ex){
   return {status,stage,reviews};
 }
 async function refreshMarketPrices(){
-  if(!shared.holdings || !shared.holdings.length) return;
-
+  if(!state.holdings || !state.holdings.length) return;
   try{
-    const symbols=shared.holdings.map(h=>h.ticker);
+    const symbols=state.holdings.map(h=>h.ticker);
 
     const {data,error}=await sb.functions.invoke('hyper-responder',{
       body:{symbols}
@@ -331,7 +327,7 @@ async function refreshMarketPrices(){
 
     if(!data || !data.prices) return;
 
-    shared.holdings=shared.holdings.map(h=>{
+    state.holdings=state.holdings.map(h=>{
       const q=data.prices[h.ticker];
 
       if(!q || !q.price) return h;
