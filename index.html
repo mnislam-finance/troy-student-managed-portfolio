@@ -313,56 +313,120 @@ function deriveTradeStage(row, aps, ex){
 }
 async function refreshMarketPrices(){
   if(!state.holdings || !state.holdings.length) return;
-  try{
-    const symbols=state.holdings.map(h=>h.ticker);
 
-    const {data,error}=await sb.functions.invoke('hyper-responder',{
-      body:{symbols}
-    });
+  const symbols = state.holdings.map(h => h.ticker);
 
-    if(error){
-      console.warn('Market price update failed',error);
-      return;
+  let offset = 0;
+  const waitTime = 65000; // 65 seconds between batches
+
+  while(offset !== null){
+
+    try{
+      console.log(
+        `Updating market prices ${offset + 1}–${Math.min(offset + 8, symbols.length)} of ${symbols.length}`
+      );
+
+      const {data,error} = await sb.functions.invoke(
+        'hyper-responder',
+        {
+          body:{
+            symbols,
+            offset
+          }
+        }
+      );
+
+      if(error){
+        console.warn(
+          'Market price batch failed. Waiting before retry...',
+          error
+        );
+
+        await new Promise(resolve =>
+          setTimeout(resolve, waitTime)
+        );
+
+        continue;
+      }
+
+      if(!data || !data.prices){
+        console.warn('No price data returned.');
+        return;
+      }
+
+      state.holdings = state.holdings.map(h => {
+        const q = data.prices[h.ticker];
+
+        if(!q || !q.price) return h;
+
+        const lastPrice = Number(q.price);
+        const previousClose = Number(q.previousClose || 0);
+
+        const marketValue = h.shares * lastPrice;
+        const totalGain = marketValue - h.totalCost;
+
+        const totalGainPct =
+          h.totalCost
+            ? (totalGain / h.totalCost) * 100
+            : 0;
+
+        const dayGain =
+          previousClose
+            ? (lastPrice - previousClose) * h.shares
+            : 0;
+
+        const dayGainPct =
+          previousClose
+            ? ((lastPrice - previousClose) / previousClose) * 100
+            : 0;
+
+        return {
+          ...h,
+          lastPrice,
+          marketValue,
+          dayGain,
+          dayGainPct,
+          totalGain,
+          totalGainPct
+        };
+      });
+
+      renderAll();
+
+      console.log(
+        'Updated:',
+        data.processed
+      );
+
+      offset = data.nextOffset;
+
+      if(offset !== null){
+        console.log(
+          'Waiting 65 seconds before next price batch...'
+        );
+
+        await new Promise(resolve =>
+          setTimeout(resolve, waitTime)
+        );
+      }
+
+    }catch(err){
+      console.warn(
+        'Unable to refresh market prices',
+        err
+      );
+
+      await new Promise(resolve =>
+        setTimeout(resolve, waitTime)
+      );
     }
-
-    if(!data || !data.prices) return;
-
-    state.holdings=state.holdings.map(h=>{
-      const q=data.prices[h.ticker];
-
-      if(!q || !q.price) return h;
-
-      const lastPrice=Number(q.price);
-      const previousClose=Number(q.previousClose||0);
-
-      const marketValue=h.shares*lastPrice;
-      const totalGain=marketValue-h.totalCost;
-      const totalGainPct=h.totalCost
-        ? (totalGain/h.totalCost)*100
-        : 0;
-
-      const dayGain=previousClose
-        ? (lastPrice-previousClose)*h.shares
-        : 0;
-
-      const dayGainPct=previousClose
-        ? ((lastPrice-previousClose)/previousClose)*100
-        : 0;
-
-      return {
-        ...h,
-        lastPrice,
-        marketValue,
-        dayGain,
-        dayGainPct,
-        totalGain,
-        totalGainPct
-      };
-    });
-
-  }catch(err){
-    console.warn('Unable to refresh market prices',err);
   }
+
+  renderAll();
+
+  console.log(
+    `Market price refresh completed for ${symbols.length} holdings.`
+  );
 }
 async function loadSharedData(){
   const [tr,ap,ex,ho,sn,sp,pp] = await Promise.all([
