@@ -189,11 +189,17 @@ document.getElementById("holdingsFile").addEventListener("change", async e => {
   }
 
   state.holdings = holdings;
-  renderAll();
+shared.holdings = holdings;
 
-  alert(
-    `Imported trade history and reconstructed ${holdings.length} open holdings.`
-  );
+await refreshMarketPrices();
+
+state.holdings = shared.holdings;
+
+renderAll();
+
+alert(
+  `Imported trade history and updated ${holdings.length} holdings with current market prices.`
+);
 });
 document.getElementById("benchmarkFile").addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;const rows=await readRows(file);const parsed=rows.map(r=>{const out={date:pick(r,["Date","Trading Date"])};Object.values(ETF_MAP).forEach(sym=>{out[sym]=num(pick(r,[sym,`${sym} Return`,`Return ${sym}`]))});return out}).filter(x=>x.date);if(!parsed.length){alert("No benchmark rows with a Date column were detected.");return}state.benchmarks=parsed;renderPerformance();alert(`Imported ${parsed.length} benchmark rows.`)});
 function renderPlan(){document.getElementById("planBody").innerHTML=state.plan.map(p=>`<tr><td>${esc(p.sector)}</td><td>${esc(p.ticker)}</td><td>${esc(p.company||"")}</td><td>${p.targetWeight!==""?Number(p.targetWeight).toFixed(2)+"%":""}</td></tr>`).join("")}
