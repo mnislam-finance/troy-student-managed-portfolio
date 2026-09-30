@@ -99,7 +99,102 @@ document.querySelectorAll("nav button").forEach(btn=>btn.onclick=()=>{document.q
 function normalizeKey(k){return String(k||"").trim().toLowerCase().replace(/[%_\-]/g," ").replace(/\s+/g," ")} function pick(obj,keys){const entries=Object.entries(obj);for(const key of keys){const found=entries.find(([k])=>normalizeKey(k)===normalizeKey(key));if(found)return found[1]}return""} function num(v){if(v===null||v===undefined||v==="")return 0;const n=parseFloat(String(v).replace(/[$,%]/g,""));return Number.isFinite(n)?n:0} function parseWeight(v){if(v===null||v===undefined||v==="")return"";if(typeof v==="number")return v<=1?v*100:v;let s=String(v).replace("%","").trim();let n=parseFloat(s);if(Number.isNaN(n))return"";return n<=1&&!String(v).includes("%")?n*100:n} function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))} function fmtDate(s){return new Date(s).toLocaleString()} function money(v){return Number(v||0).toLocaleString(undefined,{style:"currency",currency:"USD",maximumFractionDigits:2})} function pct(v){return Number.isFinite(v)?v.toFixed(2)+"%":"—"}
 async function readRows(file){const data=await file.arrayBuffer();const wb=XLSX.read(data,{type:"array"});let rows=[];for(const name of wb.SheetNames)rows.push(...XLSX.utils.sheet_to_json(wb.Sheets[name],{defval:""}));return rows}
 /* Portfolio Plan import is handled by the shared Supabase handler below. */
-document.getElementById("holdingsFile").addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;const rows=await readRows(file);const planMap=Object.fromEntries(state.plan.map(p=>[p.ticker,p]));const holdings=rows.map(r=>{const ticker=String(pick(r,["Symbol","Ticker","Stock","Stock Ticker"])||"").trim().toUpperCase();const shares=num(pick(r,["Shares","Quantity","Qty"]));const lastPrice=num(pick(r,["Last Price","Price","Current Price","Market Price"]));const avgCost=num(pick(r,["Average Cost per Share","Avg Cost/Share","Average Cost","Cost Basis Per Share","Avg Price"]));const totalCost=num(pick(r,["Total Cost","Cost Basis","Cost"] )) || shares*avgCost;const marketValue=num(pick(r,["Market Value","Value","Current Value"])) || shares*lastPrice;const dayGainPct=num(pick(r,["Day Gain %","Daily Gain %","Day %"]));const dayGain=num(pick(r,["Day Gain $","Daily Gain $","Day Gain","Daily Gain"]));const totalGain=num(pick(r,["Total Gain $","Gain/Loss $","Total Gain","Unrealized Gain/Loss"] )) || marketValue-totalCost;const totalGainPct=num(pick(r,["Total Gain %","Gain/Loss %","Total Return %"] )) || (totalCost?totalGain/totalCost*100:0);const sector=pick(r,["Sector","GICS Sector","S&P Sector"])||planMap[ticker]?.sector||"Unclassified";return{ticker,shares,lastPrice,avgCost,totalCost,marketValue,dayGainPct,dayGain,totalGainPct,totalGain,sector,targetWeight:planMap[ticker]?.targetWeight??""}}).filter(x=>x.ticker&&x.shares!==0);if(!holdings.length){alert("No holdings rows detected. Include at least Symbol/Ticker and Shares/Quantity.");return}state.holdings=holdings;renderAll();alert(`Imported ${holdings.length} holdings.`)});
+document.getElementById("holdingsFile").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const rows = await readRows(file);
+
+  const planMap = Object.fromEntries(
+    state.plan.map(p => [String(p.ticker).toUpperCase(), p])
+  );
+
+  const byTicker = {};
+
+  rows.forEach(r => {
+    const ticker = String(
+      pick(r, ["Symbol", "Ticker", "Stock", "Stock Ticker"]) || ""
+    ).trim().toUpperCase();
+
+    if (!ticker) return;
+
+    const tradeType = String(
+      pick(r, ["Trade Type", "Type", "Action", "Transaction Type"]) || ""
+    ).trim().toLowerCase();
+
+    const qty = Math.abs(
+      num(pick(r, ["Quantity", "Shares", "Qty"]))
+    );
+
+    const price = num(
+      pick(r, ["Price", "Execution Price", "Trade Price"])
+    );
+
+    if (!qty || !price) return;
+
+    if (!byTicker[ticker]) {
+      byTicker[ticker] = {
+        ticker,
+        shares: 0,
+        totalCost: 0
+      };
+    }
+
+    const h = byTicker[ticker];
+
+    if (tradeType.includes("buy")) {
+      h.totalCost += qty * price;
+      h.shares += qty;
+    } else if (tradeType.includes("sell")) {
+      if (h.shares > 0) {
+        const avgCostBeforeSale = h.totalCost / h.shares;
+        const sharesToRemove = Math.min(qty, h.shares);
+
+        h.totalCost -= avgCostBeforeSale * sharesToRemove;
+        h.shares -= sharesToRemove;
+
+        if (h.shares <= 0.000001) {
+          h.shares = 0;
+          h.totalCost = 0;
+        }
+      }
+    }
+  });
+
+  const holdings = Object.values(byTicker)
+    .filter(h => h.shares > 0)
+    .map(h => {
+      const avgCost = h.totalCost / h.shares;
+      const plan = planMap[h.ticker];
+
+      return {
+        ticker: h.ticker,
+        shares: h.shares,
+        avgCost,
+        totalCost: h.totalCost,
+        lastPrice: 0,
+        marketValue: 0,
+        dayGainPct: 0,
+        dayGain: 0,
+        totalGainPct: 0,
+        totalGain: 0,
+        sector: plan?.sector || "Unclassified",
+        targetWeight: plan?.targetWeight ?? ""
+      };
+    });
+
+  if (!holdings.length) {
+    alert("No open holdings were detected from the uploaded trade history.");
+    return;
+  }
+
+  state.holdings = holdings;
+  renderAll();
+
+  alert(
+    `Imported trade history and reconstructed ${holdings.length} open holdings.`
+  );
+});
 document.getElementById("benchmarkFile").addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;const rows=await readRows(file);const parsed=rows.map(r=>{const out={date:pick(r,["Date","Trading Date"])};Object.values(ETF_MAP).forEach(sym=>{out[sym]=num(pick(r,[sym,`${sym} Return`,`Return ${sym}`]))});return out}).filter(x=>x.date);if(!parsed.length){alert("No benchmark rows with a Date column were detected.");return}state.benchmarks=parsed;renderPerformance();alert(`Imported ${parsed.length} benchmark rows.`)});
 function renderPlan(){document.getElementById("planBody").innerHTML=state.plan.map(p=>`<tr><td>${esc(p.sector)}</td><td>${esc(p.ticker)}</td><td>${esc(p.company||"")}</td><td>${p.targetWeight!==""?Number(p.targetWeight).toFixed(2)+"%":""}</td></tr>`).join("")}
 function renderSubmitSelectors(){
