@@ -220,172 +220,93 @@ async function refreshMarketPrices(){
     console.log("Market price refresh already running.");
     return;
   }
-
-  if(!state.holdings || !state.holdings.length){
-    return;
-  }
+  if(!state.holdings || !state.holdings.length) return;
 
   marketRefreshRunning = true;
-
-  const symbols = state.holdings.map(h => h.ticker);
-
-  let offset = 0;
-  const batchSize = 1;
-  const waitTime = 70000; // 70 seconds between batches
+  const symbols = [...new Set(state.holdings.map(h=>String(h.ticker||'').trim().toUpperCase()).filter(Boolean))];
+  const waitTime = 70000; // Retain existing 70-second API spacing.
+  const maxAttempts = 3;
+  const failedSymbols = [];
+  const successfulSymbols = [];
+  const sleep = ms => new Promise(resolve=>setTimeout(resolve,ms));
 
   try{
+    for(let offset=0; offset<symbols.length; offset++){
+      const ticker = symbols[offset];
+      let success = false;
+      console.log(`Refreshing ${ticker} (${offset+1}/${symbols.length})`);
 
-    while(offset !== null){
+      for(let attempt=1; attempt<=maxAttempts; attempt++){
+        try{
+          const {data,error} = await sb.functions.invoke('hyper-responder',{
+            body:{symbols,offset}
+          });
+          if(error) throw error;
+          if(!data || !data.prices) throw new Error('No price data returned');
+          const quote = data.prices[ticker];
+          const price = Number(quote?.price);
+          const previousClose = Number(quote?.previousClose);
+          if(!Number.isFinite(price) || price<=0) throw new Error(`Invalid market price for ${ticker}`);
+          const holding = state.holdings.find(h=>String(h.ticker).toUpperCase()===ticker);
+          if(!holding) throw new Error(`Missing holding for ${ticker}`);
+          const shares = Number(holding.shares);
+          const totalCost = Number(holding.totalCost);
+          if(!Number.isFinite(shares) || !Number.isFinite(totalCost)) throw new Error(`Invalid holding data for ${ticker}`);
+          const marketValue = shares*price;
+          const totalGain = marketValue-totalCost;
+          const totalGainPct = totalCost>0 ? totalGain/totalCost*100 : 0;
+          const validPreviousClose = Number.isFinite(previousClose) && previousClose>0;
+          const dayGain = validPreviousClose ? (price-previousClose)*shares : null;
+          const dayGainPct = validPreviousClose ? (price-previousClose)/previousClose*100 : null;
 
-      console.log(
-        `Updating market prices ${offset + 1}–${Math.min(
-          offset + batchSize,
-          symbols.length
-        )} of ${symbols.length}`
-      );
+          const {data:saved,error:saveError} = await sb.from('holdings')
+            .update({
+              last_price:price,
+              market_value:marketValue,
+              day_gain_pct:dayGainPct,
+              day_gain_dollar:dayGain,
+              total_gain_pct:totalGainPct,
+              total_gain_dollar:totalGain,
+              updated_at:new Date().toISOString()
+            })
+            .eq('ticker',ticker)
+            .select('ticker');
+          if(saveError) throw saveError;
+          if(!saved || saved.length===0) throw new Error(`No holdings row updated for ${ticker}; check Supabase permissions/RLS`);
 
-      const {data,error} = await sb.functions.invoke(
-        "hyper-responder",
-        {
-          body:{
-            symbols,
-            offset
-          }
-        }
-      );
-
-      if(error){
-        console.warn(
-          "Market price batch failed. Waiting 70 seconds before retry...",
-          error
-        );
-
-        await new Promise(resolve =>
-          setTimeout(resolve, waitTime)
-        );
-
-        continue;
-      }
-
-      if(!data || !data.prices){
-        console.warn("No market price data returned.");
-        break;
-      }
-
-      const processedSymbols =
-        Array.isArray(data.processed)
-          ? data.processed
-          : [];
-
-      state.holdings = state.holdings.map(h => {
-        const q = data.prices[h.ticker];
-
-        if(!q || !q.price){
-          return h;
-        }
-
-        const lastPrice = Number(q.price);
-        const previousClose = Number(q.previousClose || 0);
-
-        const marketValue = h.shares * lastPrice;
-        const totalGain = marketValue - h.totalCost;
-
-        const totalGainPct =
-          h.totalCost
-            ? (totalGain / h.totalCost) * 100
-            : 0;
-
-        const dayGain =
-          previousClose
-            ? (lastPrice - previousClose) * h.shares
-            : 0;
-
-        const dayGainPct =
-          previousClose
-            ? ((lastPrice - previousClose) / previousClose) * 100
-            : 0;
-
-        return {
-          ...h,
-          lastPrice,
-          marketValue,
-          dayGain,
-          dayGainPct,
-          totalGain,
-          totalGainPct
-        };
-      });
-
-      for(const ticker of processedSymbols){
-        const h = state.holdings.find(
-          x => x.ticker === ticker
-        );
-
-        if(!h) continue;
-
-        const {error:updateError} = await sb
-          .from("holdings")
-          .update({
-            last_price: h.lastPrice,
-            market_value: h.marketValue,
-            day_gain_pct: h.dayGainPct,
-            day_gain_dollar: h.dayGain,
-            total_gain_pct: h.totalGainPct,
-            total_gain_dollar: h.totalGain,
-            updated_at: new Date().toISOString()
-          })
-          .eq("ticker", h.ticker);
-
-        if(updateError){
-          console.warn(
-            `Could not save market price for ${h.ticker}`,
-            updateError
+          state.holdings = state.holdings.map(h=>
+            String(h.ticker).toUpperCase()===ticker
+              ? {...h,lastPrice:price,marketValue,totalGain,totalGainPct,dayGain,dayGainPct}
+              : h
           );
+          successfulSymbols.push(ticker);
+          success = true;
+          console.log(`${ticker} saved at $${price} (quote date ${quote.datetime||'unavailable'})`);
+          renderAll();
+          break;
+        }catch(err){
+          console.warn(`${ticker}: attempt ${attempt}/${maxAttempts} failed`,err);
+          if(attempt<maxAttempts) await sleep(waitTime);
         }
       }
-
-      renderAll();
-
-      console.log(
-        "Updated symbols:",
-        processedSymbols
-      );
-
-      offset =
-        data.nextOffset === null ||
-        data.nextOffset === undefined
-          ? null
-          : Number(data.nextOffset);
-
-      if(offset !== null){
-        console.log(
-          "Waiting 70 seconds before the next market-price batch..."
-        );
-
-        await new Promise(resolve =>
-          setTimeout(resolve, waitTime)
-        );
+      if(!success){
+        failedSymbols.push(ticker);
+        console.warn(`Market price for ${ticker} could not be updated; previous price retained.`);
       }
+      if(offset<symbols.length-1) await sleep(waitTime);
     }
-
+    console.log('Market-price refresh finished.',{successfulSymbols,failedSymbols});
+    if(failedSymbols.length){
+      console.warn('Prices not updated for:',failedSymbols.join(', '));
+    }
     renderAll();
-
-    console.log(
-      `Market price refresh completed for ${symbols.length} holdings.`
-    );
-
   }catch(err){
-
-    console.warn(
-      "Unable to refresh market prices",
-      err
-    );
-
+    console.error('Unable to refresh market prices',err);
   }finally{
-
-    marketRefreshRunning = false;
+    marketRefreshRunning=false;
   }
 }
+
 async function loadSharedData(){
   const [tr,ap,ex,ho,sn,sp,pp] = await Promise.all([
     sb.from('trade_requests').select('*').order('created_at',{ascending:false}),
